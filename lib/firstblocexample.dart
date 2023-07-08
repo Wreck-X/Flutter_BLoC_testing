@@ -1,144 +1,212 @@
-import 'dart:convert';
-import 'dart:io';
+// ignore_for_file: avoid_print
+
+import 'package:bloctesting/Bloc/changcolorevent.dart';
+import 'package:bloctesting/Bloc/changecolorbloc.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:bloc/bloc.dart';
 
 void main() {
-  runApp(MaterialApp(
-    title: 'FSA',
-    theme: ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-      useMaterial3: true,
-    ),
-    home: BlocProvider(
-      create: (_) => PersonsBloc(),
-      child: const Homepage(),
-    ),
-  ));
+  Bloc.observer = const AppBlocObserver();
+  runApp(const App());
 }
 
-@immutable
-abstract class LoadAction {
-  const LoadAction();
-}
+/// {@template app_bloc_observer}
+/// Custom [BlocObserver] that observes all bloc and cubit state changes.
+/// {@endtemplate}
+class AppBlocObserver extends BlocObserver {
+  /// {@macro app_bloc_observer}
+  const AppBlocObserver();
 
-enum PersonUrl {
-  persons1,
-  persons2,
-}
+  @override
+  void onChange(BlocBase<dynamic> bloc, Change<dynamic> change) {
+    super.onChange(bloc, change);
+    if (bloc is Cubit) print(change);
+  }
 
-extension UrlString on PersonUrl {
-  String get urlString {
-    switch (this) {
-      case PersonUrl.persons1:
-        return 'http://127.0.0.1:5500/api/persons1.json';
-      case PersonUrl.persons2:
-        return 'http://127.0.0.1:5500/api/persons2.json';
-    }
+  @override
+  void onTransition(
+    Bloc<dynamic, dynamic> bloc,
+    Transition<dynamic, dynamic> transition,
+  ) {
+    super.onTransition(bloc, transition);
+    print(transition);
   }
 }
 
-@immutable
-class LoadPersonsAction extends LoadAction {
-  final PersonUrl url;
-
-  LoadPersonsAction({required this.url});
-}
-
-@immutable
-class Person {
-  final String name;
-  final int age;
-
-  const Person({
-    required this.name,
-    required this.age,
-  });
-
-  Person.fromJson(Map<String, dynamic> json)
-      : name = json['name'] as String,
-        age = json['age'] as int;
-}
-
-Future<Iterable<Person>> getPersons(String url) => HttpClient()
-    .getUrl(Uri.parse(url))
-    .then((req) => req.close())
-    .then((resp) => resp.transform(utf8.decoder).join())
-    .then((str) => json.decode(str) as List<dynamic>)
-    .then((list) => list.map((e) => Person.fromJson(e)));
-
-@immutable
-class FetchResult {
-  final Iterable<Person> persons;
-  final bool isRetrievedFromCache;
-
-  FetchResult({
-    required this.persons,
-    required this.isRetrievedFromCache,
-  });
+/// {@template app}
+/// A [StatelessWidget] that:
+/// * uses [bloc](https://pub.dev/packages/bloc) and
+/// [flutter_bloc](https://pub.dev/packages/flutter_bloc)
+/// to manage the state of a counter and the app theme.
+/// {@endtemplate}
+class App extends StatelessWidget {
+  /// {@macro app}
+  const App({super.key});
 
   @override
-  String toString() =>
-      'FetchResult (isRetrievedFromCache = $isRetrievedFromCache,persons = $persons)';
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) => ThemeCubit(),
+      child: const AppView(),
+    );
+  }
 }
 
-class PersonsBloc extends Bloc<LoadAction, FetchResult?> {
-  final Map<PersonUrl, Iterable<Person>> _cache = {};
-  PersonsBloc() : super(null) {
-    on<LoadPersonsAction>(
-      (event, emit) async {
-        final url = event.url;
-        if (_cache.containsKey(url)) {
-          // value is in cache
-          final cachedPersons = _cache[url]!;
-          final result = FetchResult(
-            persons: cachedPersons,
-            isRetrievedFromCache: true,
-          );
-          emit(result);
-        } else {
-          final persons = await getPersons(url.urlString);
-          _cache[url] = persons;
-          final result = FetchResult(
-            persons: persons,
-            isRetrievedFromCache: false,
-          );
-          emit(result);
-        }
+/// {@template app_view}
+/// A [StatelessWidget] that:
+/// * reacts to state changes in the [ThemeCubit]
+/// and updates the theme of the [MaterialApp].
+/// * renders the [CounterPage].
+/// {@endtemplate}
+class AppView extends StatelessWidget {
+  /// {@macro app_view}
+  const AppView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<ThemeCubit, ThemeData>(
+      builder: (_, theme) {
+        return MaterialApp(
+          theme: theme,
+          home: const CounterPage(),
+        );
       },
     );
   }
 }
 
-extension Subscript<T> on Iterable<T> {
-  T? operator [](int index) => length > index ? elementAt(index) : null;
+/// {@template counter_page}
+/// A [StatelessWidget] that:
+/// * provides a [CounterBloc] to the [CounterView].
+/// {@endtemplate}
+class CounterPage extends StatelessWidget {
+  /// {@macro counter_page}
+  const CounterPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiBlocProvider(providers: [
+      BlocProvider<CounterBloc>(create: (_) => CounterBloc()),
+      BlocProvider<ChangeColourBloc>(
+        create: (_) => ChangeColourBloc(),
+      )
+    ], child: CounterView());
+  }
 }
 
-class Homepage extends StatelessWidget {
-  const Homepage({super.key});
+/// {@template counter_view}
+/// A [StatelessWidget] that:
+/// * demonstrates how to consume and interact with a [CounterBloc].
+/// {@endtemplate}
+class CounterView extends StatelessWidget {
+  /// {@macro counter_view}
+  const CounterView({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
-        children: [
-          TextButton(
-              onPressed: () {
-                context.read<PersonsBloc>().add(
-                      LoadPersonsAction(url: PersonUrl.persons1),
-                    );
+      appBar: AppBar(title: const Text('Counter')),
+      body: Center(
+        child: Column(
+          children: [
+            BlocBuilder<CounterBloc, int>(
+              builder: (context, count) {
+                return Text(
+                  '$count',
+                  style: Theme.of(context).textTheme.displayLarge,
+                );
               },
-              child: const Text('Load json 1')),
-          TextButton(
-              onPressed: () {
-                context.read<PersonsBloc>().add(
-                      LoadPersonsAction(url: PersonUrl.persons2),
-                    );
-              },
-              child: const Text('Load json 2'))
+            ),
+            BlocBuilder<ChangeColourBloc, bool>(builder: (context, val) {
+              return Container(
+                height: 100,
+                width: 150,
+                color: val ? Colors.red : Colors.purple,
+              );
+            })
+          ],
+        ),
+      ),
+      floatingActionButton: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: <Widget>[
+          FloatingActionButton(
+            child: const Icon(Icons.add),
+            onPressed: () {
+              context.read<CounterBloc>().add(CounterIncrementPressed());
+            },
+          ),
+          const SizedBox(height: 4),
+          FloatingActionButton(
+            child: const Icon(Icons.remove),
+            onPressed: () {
+              context.read<CounterBloc>().add(CounterDecrementPressed());
+            },
+          ),
+          const SizedBox(height: 4),
+          FloatingActionButton(
+            child: const Icon(Icons.brightness_6),
+            onPressed: () {
+              context.read<ThemeCubit>().toggleTheme();
+            },
+          ),
+          FloatingActionButton(onPressed: () {
+            context.read<ChangeColourBloc>().add(ToggleColourtopurple());
+          }),
+          FloatingActionButton(onPressed: () {
+            context.read<ChangeColourBloc>().add(ToggleColourtored());
+          })
         ],
       ),
     );
+  }
+}
+
+/// Event being processed by [CounterBloc].
+abstract class CounterEvent {}
+
+/// Notifies bloc to increment state.
+class CounterIncrementPressed extends CounterEvent {}
+
+/// Notifies bloc to decrement state.
+class CounterDecrementPressed extends CounterEvent {}
+
+/// {@template counter_bloc}
+/// A simple [Bloc] that manages an `int` as its state.
+/// {@endtemplate}
+class CounterBloc extends Bloc<CounterEvent, int> {
+  /// {@macro counter_bloc}
+  CounterBloc() : super(0) {
+    on<CounterIncrementPressed>((event, emit) => emit(state + 5));
+    on<CounterDecrementPressed>((event, emit) => emit(state - 1));
+  }
+}
+
+/// {@template brightness_cubit}
+/// A simple [Cubit] that manages the [ThemeData] as its state.
+/// {@endtemplate}
+class ThemeCubit extends Cubit<ThemeData> {
+  /// {@macro brightness_cubit}
+  ThemeCubit() : super(_lightTheme);
+
+  static final _lightTheme = ThemeData(
+    floatingActionButtonTheme: const FloatingActionButtonThemeData(
+      foregroundColor: Colors.white,
+    ),
+    brightness: Brightness.light,
+  );
+
+  static final _darkTheme = ThemeData(
+    floatingActionButtonTheme: const FloatingActionButtonThemeData(
+      foregroundColor: Colors.black,
+    ),
+    brightness: Brightness.dark,
+  );
+
+  /// Toggles the current brightness between light and dark.
+  void toggleTheme() {
+    emit(state.brightness == Brightness.dark ? _lightTheme : _darkTheme);
   }
 }
